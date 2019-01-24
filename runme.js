@@ -9,6 +9,8 @@
 // your final auto-generated-widget.html file, and push your latest
 // changes to your backing github repo.
 
+var DEFAULT_PORT = 8989;
+
 var http = require('http'),
   url = require('url'),
   path = require('path'),
@@ -45,8 +47,8 @@ http.createServer(function(req, res) {
     notes += "<p>Generated a new auto-generated-widget.html file...</p>";
     //pushToGithub();
     //pushToGithubSync();
-    pushToGithubAsync();
-    notes += "<p>Pushed updates to Github...</p>";
+    //pushToGithubAsync();
+    //notes += "<p>Pushed updates to Github...</p>";
 
     //html = html + htmlDocs;
     var finalHtml = htmlDocs.replace(/<!-- pre-notes -->/, notes);
@@ -154,7 +156,8 @@ http.createServer(function(req, res) {
     
   }
 
-}).listen(process.env.PORT);
+}).listen(process.env.PORT || DEFAULT_PORT);
+console.log('Listening on', process.env.PORT || DEFAULT_PORT);
 
 String.prototype.regexIndexOf = function(regex, startpos) {
     var indexOf = this.substring(startpos || 0).search(regex);
@@ -175,13 +178,12 @@ var evalWidgetJs = function() {
   widgetSrc = fs.readFileSync('widget.js')+'';
   
   // fill in some auto fill stuff
-  var widgetUrl = 'http://' +
-    process.env.C9_PROJECT + '-' + process.env.C9_USER +
-    '.c9users.io/widget.html';
-  var editUrl = 'http://ide.c9.io/' +
-    process.env.C9_USER + '/' +
-    process.env.C9_PROJECT;
+  //var widgetUrl = 'http://' +
+    //process.env.C9_PROJECT + '-' + process.env.C9_USER +
+    //'.c9users.io/widget.html';
+  var editUrl = '';
   var github = getGithubUrl();
+  var widgetUrl = github.url;
 
   var reUrl = /(url\s*:\s*['"]?)\(auto fill by runme\.js\)/;
   //console.log("reUrl:", reUrl);
