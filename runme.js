@@ -9,7 +9,7 @@
 // your final auto-generated-widget.html file, and push your latest
 // changes to your backing github repo.
 
-var DEFAULT_PORT = 8989;
+var DEFAULT_PORT = 8787;
 
 var http = require('http'),
   url = require('url'),

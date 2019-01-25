@@ -1261,13 +1261,54 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
                     setTimeout(that.doNextStep.bind(that), 200);
                 });
                 */
-                
-            // start the process            
-            this.doNextStep();
-                
-            //});
+
+            // Find the Z work offset.  Probing operates using machine coordinates,
+            // but our offsets need to be in work coordinates.
+	    this.status("Finding work offset.");
+	    var that = this;
+	    this.findWorkOffset(function() {
+		    that.doNextStep();
+	    });
             
         },
+	workOffsetZ: 0,
+	findWorkOffset: function(cb) {
+		var that = this;
+		var machinePos = null;
+		var workPos = null;
+		var handler = function(data) {
+			var json = $.parseJSON(data.dataline);
+			var gotResult = false;
+			if ('pos' in json || 'mpo' in json) {
+				json = { r: json };
+			}
+	                if ('r' in json && 'pos' in json.r) {
+				workPos = [ json.r.pos.x, json.r.pos.y, json.r.pos.z ];
+				gotResult = true;
+			}
+			if ('r' in json && 'mpo' in json.r) {
+				machinePos = [ json.r.mpo.x, json.r.mpo.y, json.r.mpo.z ];
+				gotResult = true;
+			}
+			if (gotResult && !machinePos) {
+	    			that.send('{"mpo":null}\n');
+			} else if (gotResult && !workPos) {
+	    			that.send('{"pos":null}\n');
+			} else if (gotResult) {
+				// have both
+				chilipeppr.unsubscribe("/com-chilipeppr-widget-serialport/recvline", that, handler);
+				that.isSubToRecvline = false;
+				that.workOffsetZ = machinePos[2] - workPos[2];
+				cb();
+			}
+		};
+		
+		if (!that.isSubToRecvline) {
+			chilipeppr.subscribe("/com-chilipeppr-widget-serialport/recvline", that, handler);
+			that.isSubToRecvline = true;
+		}
+	    	that.send('{"pos":null}\n');
+	},
         genProbeSteps: function() {
             // we'll generate the probe steps and store in this.probe object array
             var steps = this.calcSteps();
@@ -1409,14 +1450,6 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
                     // when we get here we have our lowest z pos in the this.probes array
                     console.log("got done callback");
                     
-                    if (that.currentStep == 0) {
-                        // since we were on our first step, we do need to reset z to 0 pos
-                        console.log("got done watchz callback on 1st step. zeroing out z.");
-                        that.status("Zeroing out Z on 1st probe as baseline Z.");
-                        probe.z = 0;
-                        that.send("G28.3 Z0\n");
-                    }
-                    
                     setTimeout(that.doNextStep.bind(that), 200);
                 });
                 
@@ -1428,15 +1461,9 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
                 //} else {
                 //    that.send("G38.2 Z-0.5 F5\n");
                 //}
-                var maxNegZ = $('.autolevel-elem.al-coord.maxneg-z').val();
+                var maxNegZ = parseFloat($('.autolevel-elem.al-coord.maxneg-z').val()) + that.workOffsetZ;
                 var probeFeedRate = $('.autolevel-elem.al-coord.probe-fr').val();
-                if (that.currentStep == 0) {
-                    // send long neg z command (hope this works) on 1st step cuz could have high z val
-                    that.send("G38.2 Z-10 F" + probeFeedRate + "\n");
-                } else {
-                    // on subsequent we have a known z near pcb board so no need to go too negative (just in case)
-                    that.send("G38.2 Z" + maxNegZ + " F" + probeFeedRate + "\n");
-                }
+                that.send("G38.2 Z" + maxNegZ + " F" + probeFeedRate + "\n");
             }, 3000);
             
         },
@@ -1448,24 +1475,6 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
             var that = this;
             var callback = function(data) {
                 console.log("got my callback for z homing. data:", data);
-                // make sure it's the data we want
-                // we are sometimes getting dual "sr" stuff and it's not valid json
-                // so do some cleanup
-                // dataline: "{"sr"{"sr":{"vel":0.00,"stat":3}}↵"} 
-                
-                /* don't need this code anymore as serial port widget fixes for us
-                if (data.dataline.match(/\{"sr"\{"sr"\:/)) {
-                    console.log("got bad data. cleaning it up best we can.");
-                    data.dataline = data.dataline.replace(/\{"sr"\{"sr"\:/, '{"sr":');
-                    console.log("new dataline:", data.dataline);
-                }
-                // dataline: "{"r"{"sr":{"vel":0.00,"mpoz":0.000,"coor":1,"dist":0,"stat":3}}↵"}
-                if (data.dataline.match(/\{"r"\{"sr"\:/)) {
-                    console.log("got bad data2. cleaning it up best we can.");
-                    data.dataline = data.dataline.replace(/\{"r"\{"sr"\:/, '{"sr":');
-                    console.log("new dataline:", data.dataline);
-                }
-                */
                 var json = $.parseJSON(data.dataline);
                 
                 // G38.2 Z-1 F5 approach
@@ -1481,20 +1490,13 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
                     that.isSubToRecvline = false;
 
                     console.log("got to end of G38.2 cmd");
-                    probe.z = json.r.prb.z;
+                    probe.z = json.r.prb.z - that.workOffsetZ;
                     
                     probe.done = true;
                     probe.ts = new Date();
                     
-                    if (this.currentStep == 0) {
-                        // this is our 1st position, which isn't really a position, it's our auto-setting of 0
-                        //this.status("Set our 1st probe position as new Z zero.");
-                        probe.z = 0;
-                        //this.send("G28.3 Z0\n");
-                    } else {
-                        var pos = '{x:' + probe.x + ',y:' + probe.y + '}';
-                        that.status("Working on probe for " + pos + " Found lowest Z:" + probe.z);
-                    }                        
+                    var pos = '{x:' + probe.x + ',y:' + probe.y + '}';
+                    that.status("Working on probe for " + pos + " Found lowest Z:" + probe.z);
                     // update matrix to show results
                     this.removeRegionFrom3d();
                     if (!this.isMatrixShowing) 
@@ -2064,6 +2066,7 @@ cpdefine("inline:com-chilipeppr-widget-autolevel", ["chilipeppr_ready", "ThreeHe
         },
     }
 });
+
     //]]>
     </script>
 
